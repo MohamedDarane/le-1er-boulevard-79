@@ -9,6 +9,9 @@ export const printThermalRevenueReport = (
   endDate: string, 
   totalRevenue: number
 ): void => {
+  try {
+    console.log('Printing thermal revenue report for period:', periodType, 'from', startDate, 'to', endDate);
+    
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -67,8 +70,8 @@ export const printThermalRevenueReport = (
     return acc;
   }, {});
 
-  // Generate thermal receipt
-  let report = ESCPOSFormatter.init();
+  // Generate thermal receipt with proper initialization
+  let report = ESCPOSFormatter.init(); // Add proper initialization
   report += ESCPOSFormatter.setCharacterSet();
   report += ESCPOSFormatter.textNormal();
   report += ESCPOSFormatter.alignCenter();
@@ -228,5 +231,11 @@ export const printThermalRevenueReport = (
   report += ESCPOSFormatter.cutPaper();
   
   // Print the report using thermal printer
+  console.log('Sending detailed revenue report to printer...');
   ESCPOSFormatter.print(report);
+  console.log('Detailed revenue report print command sent successfully');
+  } catch (error) {
+    console.error('Error printing thermal revenue report:', error);
+    alert('Erreur d\'impression du rapport de revenus. Vérifiez la connexion de l\'imprimante.');
+  }
 };

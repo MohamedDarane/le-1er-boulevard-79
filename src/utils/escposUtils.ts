@@ -195,53 +195,85 @@ export class ESCPOSFormatter {
   
   // Print directly to thermal printer using Web Serial API or Electron
   static print(content: string): void {
-    this.printDirectly(content);
+    // Add debug logging for print attempts
+    console.log('[ESCPOSFormatter] Attempting to print content, length:', content.length);
+    console.log('[ESCPOSFormatter] Print content preview:', content.substring(0, 100) + '...');
+    
+    try {
+      this.printDirectly(content);
+    } catch (error) {
+      console.error('[ESCPOSFormatter] Print failed with error:', error);
+      // Show user-friendly error message
+      alert('Erreur d\'impression: ' + (error instanceof Error ? error.message : 'Erreur inconnue'));
+      throw error;
+    }
   }
 
   // Print both tickets directly with enhanced settings for thermal printers
   static printBothTickets(clientTicket: string, agentTicket: string): void {
-    // Prepend initialization and darkness settings to both tickets
-    const enhancedClientTicket = this.init() + clientTicket;
-    const enhancedAgentTicket = this.init() + agentTicket;
+    console.log('[ESCPOSFormatter] Printing both tickets - client and agent');
     
-    // For table tickets, prioritize Electron thermal printing
-    this.printTableTicketDirectly(enhancedClientTicket).then(() => {
-      // Print agent ticket after a delay for physical separation
-      setTimeout(() => {
-        this.printTableTicketDirectly(enhancedAgentTicket);
-      }, 2000);
-    }).catch((error) => {
-      console.error('Table ticket printing failed:', error);
-      // In Electron, show configuration dialog instead of fallback
-      if (isElectron()) {
-        alert('Erreur d\'impression: Veuillez configurer votre imprimante thermique dans les paramètres de l\'application.');
-      } else {
-        // Only fallback to browser printing if not in Electron
-        this.fallbackPrint(enhancedClientTicket + '\n\n--- COPIE AGENT ---\n\n' + enhancedAgentTicket);
-      }
-    });
+    try {
+      // Prepend initialization and darkness settings to both tickets
+      const enhancedClientTicket = this.init() + clientTicket;
+      const enhancedAgentTicket = this.init() + agentTicket;
+      
+      console.log('[ESCPOSFormatter] Enhanced tickets prepared, client length:', enhancedClientTicket.length, 'agent length:', enhancedAgentTicket.length);
+      
+      // For table tickets, prioritize Electron thermal printing
+      this.printTableTicketDirectly(enhancedClientTicket).then(() => {
+        console.log('[ESCPOSFormatter] Client ticket printed successfully, printing agent ticket after delay...');
+        
+        // Print agent ticket after a delay for physical separation
+        setTimeout(() => {
+          this.printTableTicketDirectly(enhancedAgentTicket).catch((agentError) => {
+            console.error('[ESCPOSFormatter] Agent ticket printing failed:', agentError);
+            alert('Erreur lors de l\'impression de la copie agent: ' + agentError.message);
+          });
+        }, 2000);
+      }).catch((error) => {
+        console.error('[ESCPOSFormatter] Table ticket printing failed:', error);
+        // In Electron, show configuration dialog instead of fallback
+        if (isElectron()) {
+          alert('Erreur d\'impression: Veuillez configurer votre imprimante thermique dans les paramètres de l\'application. Erreur: ' + error.message);
+        } else {
+          // Only fallback to browser printing if not in Electron
+          console.log('[ESCPOSFormatter] Falling back to browser printing for both tickets...');
+          this.fallbackPrint(enhancedClientTicket + '\n\n--- COPIE AGENT ---\n\n' + enhancedAgentTicket);
+        }
+      });
+    } catch (error) {
+      console.error('[ESCPOSFormatter] printBothTickets failed with error:', error);
+      alert('Erreur d\'impression des tickets: ' + (error instanceof Error ? error.message : 'Erreur inconnue'));
+    }
   }
   
   // Specialized printing method for table tickets that prioritizes thermal printing
   private static async printTableTicketDirectly(content: string): Promise<void> {
+    console.log('[ESCPOSFormatter] printTableTicketDirectly called, content length:', content.length);
+    
     // Get saved printer settings
     const printerType = await electronStore.get('printerType') || 'serial';
     const savedSerialPort = await electronStore.get('selectedSerialPort');
+    
+    console.log('[ESCPOSFormatter] Printer settings - type:', printerType, 'serialPort:', savedSerialPort);
     
     // Try Electron printing first if available (highest priority for table tickets)
     if (isElectron()) {
       try {
         console.log('[TABLE TICKET] Printing via Electron thermal printer...');
         const success = await printToElectronPrinter(content);
+        console.log('[TABLE TICKET] Electron print result:', success);
+        
         if (success) {
           console.log('Table ticket printed successfully via Electron');
           return;
         } else {
-          throw new Error('Electron printing returned false');
+          throw new Error('Electron printing returned false - printer may not be configured or connected');
         }
       } catch (error) {
         console.error('Electron printing failed for table ticket:', error);
-        throw error; // Don't continue to other methods for table tickets in Electron
+        throw new Error('Échec d\'impression via Electron: ' + (error instanceof Error ? error.message : 'Erreur inconnue'));
       }
     }
     
@@ -300,19 +332,27 @@ export class ESCPOSFormatter {
   }
   
   private static async printDirectly(content: string): Promise<void> {
+    console.log('[ESCPOSFormatter] printDirectly called, content length:', content.length);
+    
     // Get saved printer settings
     const printerType = await electronStore.get('printerType') || 'serial';
     const savedSerialPort = await electronStore.get('selectedSerialPort');
     const savedSystemPrinter = await electronStore.get('selectedSystemPrinter');
+    
+    console.log('[ESCPOSFormatter] Printer configuration - type:', printerType, 'serial:', savedSerialPort, 'system:', savedSystemPrinter);
     
     // Try Electron printing first if available
     if (isElectron()) {
       try {
         console.log('[ESCPOS] Printing via Electron...');
         const success = await printToElectronPrinter(content);
+        console.log('[ESCPOS] Electron print result:', success);
+        
         if (success) {
           console.log('Ticket printed successfully via Electron');
           return;
+        } else {
+          console.warn('[ESCPOS] Electron printing returned false, trying fallback methods');
         }
       } catch (error) {
         console.warn('Electron printing failed, trying other methods:', error);

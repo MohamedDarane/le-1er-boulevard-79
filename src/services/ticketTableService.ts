@@ -2,6 +2,9 @@ import { TableOrder } from '../types';
 import { ESCPOSFormatter } from '../utils/escposUtils';
 
 export const printTableTicket = (order: TableOrder): void => {
+  try {
+    console.log('Printing table ticket for order:', order.id, 'table:', order.tableNumber);
+    
   // Generate customer ticket with enhanced darkness
   let customerTicket = ESCPOSFormatter.init(); // Now includes darkness settings
   customerTicket += ESCPOSFormatter.alignCenter();
@@ -134,7 +137,13 @@ export const printTableTicket = (order: TableOrder): void => {
   agentCopy += ESCPOSFormatter.cutPaper();
   
   // Print both tickets with automatic separation
+  console.log('Sending table tickets to printer...');
   ESCPOSFormatter.printBothTickets(customerTicket, agentCopy);
+  console.log('Table ticket print command sent successfully');
+  } catch (error) {
+    console.error('Error printing table ticket:', error);
+    alert('Erreur d\'impression du ticket de table. Vérifiez la connexion de l\'imprimante.');
+  }
 };
 
 // Alternative method to print table tickets individually with manual control

@@ -14,8 +14,14 @@ export const generateThankYouMessage = (): string => {
 };
 
 export const printThermalInvoice = (order: Order): void => {
-  // Generate thermal invoice
-  let invoice = ESCPOSFormatter.alignCenter();
+  try {
+    console.log('Printing thermal invoice for order:', order.id);
+    
+    // Generate thermal invoice with proper initialization
+    let invoice = ESCPOSFormatter.init(); // Add proper initialization
+    invoice += ESCPOSFormatter.setCharacterSet();
+    invoice += ESCPOSFormatter.textNormal();
+    invoice += ESCPOSFormatter.alignCenter();
   
   // Header
   invoice += ESCPOSFormatter.textLarge();
@@ -97,7 +103,13 @@ export const printThermalInvoice = (order: Order): void => {
   invoice += ESCPOSFormatter.cutPaper();
   
   // Print the invoice using thermal printer
+  console.log('Sending invoice to printer...');
   ESCPOSFormatter.print(invoice);
+  console.log('Invoice print command sent successfully');
+  } catch (error) {
+    console.error('Error printing thermal invoice:', error);
+    alert('Erreur d\'impression de la facture. Vérifiez la connexion de l\'imprimante.');
+  }
 };
 
 export const printReport = (
@@ -107,6 +119,9 @@ export const printReport = (
   endDate: string, 
   totalRevenue: number
 ): void => {
+  try {
+    console.log('Printing revenue report for period:', periodType, 'from', startDate, 'to', endDate);
+    
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -138,8 +153,11 @@ export const printReport = (
     }
   };
 
-  // Generate thermal receipt
-  let report = ESCPOSFormatter.alignCenter();
+  // Generate thermal receipt with proper initialization
+  let report = ESCPOSFormatter.init(); // Add proper initialization
+  report += ESCPOSFormatter.setCharacterSet();
+  report += ESCPOSFormatter.textNormal();
+  report += ESCPOSFormatter.alignCenter();
   
   // Header
   report += ESCPOSFormatter.textLarge();
@@ -202,10 +220,19 @@ export const printReport = (
   report += ESCPOSFormatter.cutPaper();
   
   // Print the report using thermal printer
+  console.log('Sending revenue report to printer...');
   ESCPOSFormatter.print(report);
+  console.log('Revenue report print command sent successfully');
+  } catch (error) {
+    console.error('Error printing revenue report:', error);
+    alert('Erreur d\'impression du rapport. Vérifiez la connexion de l\'imprimante.');
+  }
 };
 
 export const printTicket = (order: Order): void => {
+  try {
+    console.log('Printing ticket for order:', order.id);
+    
   const thankYouMessage = generateThankYouMessage();
   
   // Generate customer ticket WITHOUT ESC/POS init commands (will be added by printBothTickets)
@@ -348,5 +375,11 @@ export const printTicket = (order: Order): void => {
   
   // Use printBothTickets to ensure proper separation between tickets
   // This method will print them as two separate print jobs with a delay between them
+  console.log('Sending tickets to printer...');
   ESCPOSFormatter.printBothTickets(customerTicket, agentCopy);
+  console.log('Ticket print command sent successfully');
+  } catch (error) {
+    console.error('Error printing ticket:', error);
+    alert('Erreur d\'impression du ticket. Vérifiez la connexion de l\'imprimante.');
+  }
 };

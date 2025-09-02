@@ -214,14 +214,19 @@ ipcMain.handle('list-system-printers', async () => {
 
 ipcMain.handle('print-data', async (event, data) => {
   try {
+    console.log('[ELECTRON] Print request received, data length:', data.length);
+    console.log('[ELECTRON] Print data preview:', data.substring(0, 100) + '...');
+    
     const printers = mainWindow.webContents.getPrinters();
+    console.log('[ELECTRON] Available system printers:', printers.map(p => p.name));
+    
     const thermalPrinter = printers.find(p =>
       ['thermal', 'receipt', 'ticket', 'generic', 'text only']
         .some(keyword => p.name.toLowerCase().includes(keyword))
     );
 
     if (thermalPrinter) {
-      console.log(`Found system printer: ${thermalPrinter.name}`);
+      console.log(`[ELECTRON] Found system thermal printer: ${thermalPrinter.name}`);
       return new Promise(resolve => {
         mainWindow.webContents.print({
           silent: true,
@@ -229,18 +234,23 @@ ipcMain.handle('print-data', async (event, data) => {
           margins: { marginType: 'none' },
           copies: 1
         }, (success, failureReason) => {
-          if (success) resolve(true);
-          else {
-            console.error('Print failed:', failureReason);
+          console.log('[ELECTRON] System print result:', success, failureReason);
+          if (success) {
+            console.log('[ELECTRON] System print successful');
+            resolve(true);
+          } else {
+            console.error('[ELECTRON] System print failed:', failureReason);
+            console.log('[ELECTRON] Falling back to serial printer...');
             printToSerial(data).then(resolve);
           }
         });
       });
     } else {
+      console.log('[ELECTRON] No thermal system printer found, using serial printer');
       return await printToSerial(data);
     }
   } catch (error) {
-    console.error('Error printing:', error);
+    console.error('[ELECTRON] Error in print-data handler:', error);
     return false;
   }
 });
@@ -248,23 +258,29 @@ ipcMain.handle('print-data', async (event, data) => {
 // Helper function to print to serial printer
 async function printToSerial(data) {
   try {
+    console.log('[ELECTRON] printToSerial called, data length:', data.length);
+    console.log('[ELECTRON] Connected printer status:', !!connectedPrinter, connectedPrinter?.isOpen);
+    
     if (!connectedPrinter || !connectedPrinter.isOpen) {
-      console.error('No printer connected or printer not open');
+      console.error('[ELECTRON] No printer connected or printer not open');
+      console.log('[ELECTRON] Printer port:', printerPort);
       return false;
     }
+    
     return new Promise((resolve, reject) => {
+      console.log('[ELECTRON] Writing data to serial printer...');
       connectedPrinter.write(data, (error) => {
         if (error) {
-          console.error('Error writing to printer:', error);
+          console.error('[ELECTRON] Error writing to printer:', error);
           reject(false);
         } else {
-          console.log('Data sent to printer successfully');
+          console.log('[ELECTRON] Data sent to printer successfully');
           resolve(true);
         }
       });
     });
   } catch (error) {
-    console.error('Error in printToSerial:', error);
+    console.error('[ELECTRON] Error in printToSerial:', error);
     return false;
   }
 }
