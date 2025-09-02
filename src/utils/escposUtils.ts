@@ -193,19 +193,31 @@ export class ESCPOSFormatter {
            this.cutPaper();
   }
   
-  // Print directly to thermal printer using Web Serial API or Electron
+  // Simplified print method that avoids async issues
   static print(content: string): void {
-    // Add debug logging for print attempts
-    console.log('[ESCPOSFormatter] Attempting to print content, length:', content.length);
-    console.log('[ESCPOSFormatter] Print content preview:', content.substring(0, 100) + '...');
+    console.log('[ESCPOSFormatter] Print request - content length:', content.length);
     
     try {
-      this.printDirectly(content);
+      // Use a simpler approach that doesn't block the UI
+      setTimeout(() => {
+        this.printDirectlySimple(content)
+          .then((success) => {
+            if (success) {
+              console.log('[ESCPOSFormatter] Print completed successfully');
+            } else {
+              console.warn('[ESCPOSFormatter] Print failed, using fallback');
+              this.fallbackPrint(content);
+            }
+          })
+          .catch((error) => {
+            console.error('[ESCPOSFormatter] Print error:', error);
+            this.fallbackPrint(content);
+          });
+      }, 100);
+      
     } catch (error) {
-      console.error('[ESCPOSFormatter] Print failed with error:', error);
-      // Show user-friendly error message
+      console.error('[ESCPOSFormatter] Print setup failed:', error);
       alert('Erreur d\'impression: ' + (error instanceof Error ? error.message : 'Erreur inconnue'));
-      throw error;
     }
   }
 
@@ -331,102 +343,75 @@ export class ESCPOSFormatter {
     throw new Error('No thermal printer configured for table tickets');
   }
   
-  private static async printDirectly(content: string): Promise<void> {
-    console.log('[ESCPOSFormatter] printDirectly called, content length:', content.length);
+  // Simplified direct printing method that doesn't block UI
+  private static async printDirectlySimple(content: string): Promise<boolean> {
+    console.log('[ESCPOSFormatter] printDirectlySimple called, content length:', content.length);
     
-    // Get saved printer settings
-    const printerType = await electronStore.get('printerType') || 'serial';
-    const savedSerialPort = await electronStore.get('selectedSerialPort');
-    const savedSystemPrinter = await electronStore.get('selectedSystemPrinter');
-    
-    console.log('[ESCPOSFormatter] Printer configuration - type:', printerType, 'serial:', savedSerialPort, 'system:', savedSystemPrinter);
-    
-    // Try Electron printing first if available
-    if (isElectron()) {
-      try {
-        console.log('[ESCPOS] Printing via Electron...');
+    try {
+      // Try Electron printing first if available
+      if (isElectron()) {
+        console.log('[ESCPOS] Attempting Electron print...');
         const success = await printToElectronPrinter(content);
-        console.log('[ESCPOS] Electron print result:', success);
-        
         if (success) {
-          console.log('Ticket printed successfully via Electron');
-          return;
-        } else {
-          console.warn('[ESCPOS] Electron printing returned false, trying fallback methods');
+          console.log('[ESCPOS] Electron print successful');
+          return true;
         }
-      } catch (error) {
-        console.warn('Electron printing failed, trying other methods:', error);
+        console.log('[ESCPOS] Electron print failed, trying other methods');
       }
-    }
-    
-    // Use saved printer settings for Web Serial API (browser or Electron with Web Serial)
-    if ('serial' in navigator && printerType === 'serial') {
-      try {
-        let portToUse = this.selectedPort;
-        
-        // Use saved port if available and no port currently selected
-        if (!portToUse && savedSerialPort) {
-          console.log(`[ESCPOS] Using saved serial port: ${savedSerialPort}`);
-          // Request the specific saved port
-          const availablePorts = await (navigator as any).serial.getPorts();
-          portToUse = availablePorts.find((port: any) => port.getInfo().usbVendorId || port.path === savedSerialPort);
-          
-          if (!portToUse) {
-            console.log('[ESCPOS] Saved port not found, requesting port selection...');
-            portToUse = await (navigator as any).serial.requestPort();
-          }
-          
-          this.selectedPort = portToUse;
-        } else if (!portToUse) {
-          console.log('[ESCPOS] Requesting serial port for thermal printer...');
-          portToUse = await (navigator as any).serial.requestPort();
-          this.selectedPort = portToUse;
+      
+      // Try Web Serial API if available
+      if ('serial' in navigator) {
+        console.log('[ESCPOS] Attempting Web Serial print...');
+        const success = await this.printViaWebSerial(content);
+        if (success) {
+          console.log('[ESCPOS] Web Serial print successful');
+          return true;
         }
-        
-        // Check if port is already open, if not open it with optimal settings
-        if (!portToUse.readable) {
-          await portToUse.open({ 
-            baudRate: 9600,
-            dataBits: 8,
-            stopBits: 1,
-            parity: 'none',
-            flowControl: 'none'
-          });
-        }
-        
-        const writer = portToUse.writable.getWriter();
-        const encoder = new TextEncoder();
-        
-        // Send raw ESC/POS content with enhanced darkness settings
-        await writer.write(encoder.encode(content));
-        await writer.close();
-        
-        console.log('Ticket printed successfully via Serial API with enhanced darkness settings');
-        return;
-      } catch (error) {
-        console.warn('Serial printing failed:', error);
-        // Reset port on error
-        this.selectedPort = null;
-        
-        // In Electron, show error dialog, in browser continue to fallback
-        if (isElectron()) {
-          alert('Erreur d\'impression: Impossible de se connecter à l\'imprimante thermique. Vérifiez la connexion USB ou configurez l\'imprimante dans les paramètres.');
-          throw error;
-        } else {
-          console.log('Falling back to browser printing...');
-        }
+        console.log('[ESCPOS] Web Serial print failed');
       }
-    } else if (printerType === 'system' && savedSystemPrinter) {
-      console.log(`[ESCPOS] Using system printer: ${savedSystemPrinter}`);
-      // For system printers, use browser printing with the saved printer
-      this.fallbackPrint(content, savedSystemPrinter);
-      return;
-    } else {
-      console.log('No specific printer configured, using fallback printing method');
+      
+      console.log('[ESCPOS] All direct print methods failed');
+      return false;
+      
+    } catch (error) {
+      console.error('[ESCPOS] printDirectlySimple error:', error);
+      return false;
     }
-    
-    // Final fallback to browser printing
-    this.fallbackPrint(content);
+  }
+  
+  // Separate Web Serial method to avoid blocking
+  private static async printViaWebSerial(content: string): Promise<boolean> {
+    try {
+      let port = this.selectedPort;
+      
+      if (!port) {
+        console.log('[ESCPOS] Requesting serial port...');
+        port = await (navigator as any).serial.requestPort();
+        this.selectedPort = port;
+      }
+      
+      if (!port.readable) {
+        await port.open({ 
+          baudRate: 9600,
+          dataBits: 8,
+          stopBits: 1,
+          parity: 'none',
+          flowControl: 'none'
+        });
+      }
+      
+      const writer = port.writable.getWriter();
+      const encoder = new TextEncoder();
+      
+      await writer.write(encoder.encode(content));
+      await writer.close();
+      
+      return true;
+    } catch (error) {
+      console.error('[ESCPOS] Web Serial error:', error);
+      this.selectedPort = null;
+      return false;
+    }
   }
   
   private static fallbackPrint(content: string, printerName?: string): void {
